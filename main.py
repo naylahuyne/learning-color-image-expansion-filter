@@ -1,11 +1,9 @@
-import numpy as np
-import scipy.ndimage as ndimage
-from skimage import color
 import os
-from tqdm import tqdm
-import imageio
-import matplotlib.pyplot as plt
+import numpy as np
+from skimage import color
 import cv2
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 def extract_patches(high_res_images, low_res_images, r, m):
     high_res_patches_Y, high_res_patches_I, high_res_patches_Q = [], [], []
@@ -144,7 +142,7 @@ if __name__ == "__main__":
     m = 11
     a_alpha0 = 20
 
-    sipi_dir = "D:\img-proc\data" 
+    sipi_dir = "D:\learning-color-image-expansion-filter\data" 
     train_files = [f"4.1.0{i}.tiff" if i < 10 else f"4.1.{i}.tiff" for i in range(1, 8)]
     test_files = [f"4.2.0{i}.tiff" if i < 10 else f"4.2.{i}.tiff" for i in range(1, 7) if i not in [2]]
 
@@ -162,17 +160,17 @@ if __name__ == "__main__":
     M_I = variational_learning(X_I, Y_I, a_alpha0)
     M_Q = variational_learning(X_Q, Y_Q, a_alpha0)
     
-    np.save("D:/img-proc/matrix/filter_Y.npy", M_Y)
-    np.save("D:/img-proc/matrix/filter_I.npy", M_I)
-    np.save("D:/img-proc/matrix/filter_Q.npy", M_Q)
+    np.save("D:/learning-color-image-expansion-filter/matrix/filter_Y.npy", M_Y)
+    np.save("D:/learning-color-image-expansion-filter/matrix/filter_I.npy", M_I)
+    np.save("D:/learning-color-image-expansion-filter/matrix/filter_Q.npy", M_Q)
 
     #Expand and evaluate
     expanded_img = expand_image(test_low_res[2], M_Y, M_I, M_Q, r, m)
     expanded_img_uint8 = (expanded_img * 255).astype(np.uint8)
-    imageio.imwrite("D:/img-proc/result/expanded_img.png", expanded_img_uint8)
+    plt.imsave("D:/learning-color-image-expansion-filter/result/expanded_img.tiff", expanded_img_uint8)
 
     test_low_res_uint8 = (test_low_res[2] * 255).astype(np.uint8) 
-    imageio.imwrite("D:/img-proc/result/low_res_image.png", test_low_res_uint8)
+    plt.imsave("D:/learning-import cv2-image-expansion-filter/result/low_res_image.tiff", test_low_res_uint8)
     # Calculate PSNR
     psnr = calculate_psnr(test_high_res[2], expanded_img)
 
