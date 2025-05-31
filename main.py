@@ -5,15 +5,19 @@ import cv2
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-def extract_patches(high_res_images, low_res_images, r, m):
+def extract_patches(high_res_images, low_res_images, r, m, yiq=True):
     high_res_patches_Y, high_res_patches_I, high_res_patches_Q = [], [], []
     low_res_patches_Y, low_res_patches_I, low_res_patches_Q = [], [], []
 
     for h_img, l_img in zip(high_res_images, low_res_images):
-        h_yiq = color.rgb2yiq(h_img)
-        l_yiq = color.rgb2yiq(l_img)
-        h_height, h_width, _ = h_yiq.shape
-        l_height, l_width, _ = l_yiq.shape
+        h_transformed = h_img
+        l_transformed = l_img
+        if yiq:
+            h_transformed = color.rgb2yiq(h_img)
+            l_transformed = color.rgb2yiq(l_img)
+
+        h_height, h_width, _ = h_transformed.shape
+        l_height, l_width, _ = l_transformed.shape
 
         for y in range(0, h_height - r + 1, r):
             for x in range(0, h_width - r + 1, r):
@@ -23,14 +27,14 @@ def extract_patches(high_res_images, low_res_images, r, m):
                    l_x + m // 2 >= l_width or l_x - m // 2 < 0:
                     continue
 
-                high_res_patches_Y.append(h_yiq[y:y+r, x:x+r, 0].flatten())
-                high_res_patches_I.append(h_yiq[y:y+r, x:x+r, 1].flatten())
-                high_res_patches_Q.append(h_yiq[y:y+r, x:x+r, 2].flatten())
+                high_res_patches_Y.append(h_transformed[y:y+r, x:x+r, 0].flatten())
+                high_res_patches_I.append(h_transformed[y:y+r, x:x+r, 1].flatten())
+                high_res_patches_Q.append(h_transformed[y:y+r, x:x+r, 2].flatten())
 
                 half_m = m // 2
-                low_res_patches_Y.append(l_yiq[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 0].flatten())
-                low_res_patches_I.append(l_yiq[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 1].flatten())
-                low_res_patches_Q.append(l_yiq[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 2].flatten())
+                low_res_patches_Y.append(l_transformed[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 0].flatten())
+                low_res_patches_I.append(l_transformed[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 1].flatten())
+                low_res_patches_Q.append(l_transformed[l_y-half_m:l_y+half_m+1, l_x-half_m:l_x+half_m+1, 2].flatten())
 
     return (np.array(high_res_patches_Y), np.array(high_res_patches_I),
             np.array(high_res_patches_Q), np.array(low_res_patches_Y),
@@ -53,7 +57,7 @@ def variational_learning(X, Y, a_alpha0):
 
     prev_M = M.copy()
     delta = 1.0
-    max_iter = 100
+    max_iter = 200
     iter_count = 0
 
     while delta > 1e-6 and iter_count < max_iter:
@@ -87,34 +91,42 @@ def variational_learning(X, Y, a_alpha0):
     print(f"Variational Learning Converged after {iter_count} iterations with delta={delta:.8f}")
     return M
 
-def expand_image(low_res_img, M_Y, M_I, M_Q, r, m):
-    low_res_yiq = color.rgb2yiq(low_res_img)
-    height, width, _ = low_res_yiq.shape
+def expand_image(low_res_img, M_1, M_2, M_3, r, m, yiq=True):
+    """
+    This function need to be refactored. 
+    Currently, channel 1 is Y or R, channel 2 is I or G, channel 3 is Q or B. 
+    For example, expanded_1 is expanded for Y or R channel.
+    """
+    low_res_transformed = low_res_img
+    if yiq:
+        low_res_transformed = color.rgb2yiq(low_res_img)
+    height, width, _ = low_res_transformed.shape
     expanded_height, expanded_width = height * r, width * r
 
-    expanded_Y = np.zeros((expanded_height, expanded_width))
-    expanded_I = np.zeros((expanded_height, expanded_width))
-    expanded_Q = np.zeros((expanded_height, expanded_width))
+    expanded_1 = np.zeros((expanded_height, expanded_width))
+    expanded_2 = np.zeros((expanded_height, expanded_width))
+    expanded_3 = np.zeros((expanded_height, expanded_width))
 
     pad_width = m // 2
-    padded_Y = np.pad(low_res_yiq[:,:,0], pad_width, mode='edge')
-    padded_I = np.pad(low_res_yiq[:,:,1], pad_width, mode='edge')
-    padded_Q = np.pad(low_res_yiq[:,:,2], pad_width, mode='edge')
+    padded_1 = np.pad(low_res_transformed[:,:,0], pad_width, mode='edge')
+    padded_2 = np.pad(low_res_transformed[:,:,1], pad_width, mode='edge')
+    padded_3 = np.pad(low_res_transformed[:,:,2], pad_width, mode='edge')
 
     for y in tqdm(range(height)):
         for x in range(width):
-            y_patch_Y = padded_Y[y:y+m, x:x+m].flatten()
-            y_patch_I = padded_I[y:y+m, x:x+m].flatten()
-            y_patch_Q = padded_Q[y:y+m, x:x+m].flatten()
+            y_patch_1 = padded_1[y:y+m, x:x+m].flatten()
+            y_patch_2 = padded_2[y:y+m, x:x+m].flatten()
+            y_patch_3 = padded_3[y:y+m, x:x+m].flatten()
 
             h_y, h_x = y * r, x * r
-            expanded_Y[h_y:h_y+r, h_x:h_x+r] = (M_Y @ y_patch_Y).reshape(r, r)
-            expanded_I[h_y:h_y+r, h_x:h_x+r] = (M_I @ y_patch_I).reshape(r, r)
-            expanded_Q[h_y:h_y+r, h_x:h_x+r] = (M_Q @ y_patch_Q).reshape(r, r)
+            expanded_1[h_y:h_y+r, h_x:h_x+r] = (M_1 @ y_patch_1).reshape(r, r)
+            expanded_2[h_y:h_y+r, h_x:h_x+r] = (M_2 @ y_patch_2).reshape(r, r)
+            expanded_3[h_y:h_y+r, h_x:h_x+r] = (M_3 @ y_patch_3).reshape(r, r)
 
-    expanded_yiq = np.stack([expanded_Y, expanded_I, expanded_Q], axis=2)
-    expanded_rgb = color.yiq2rgb(expanded_yiq)
-    return np.clip(expanded_rgb, 0, 1)
+    expanded_img = np.stack([expanded_1, expanded_2, expanded_3], axis=2)
+    if yiq:
+        expanded_img = color.yiq2rgb(expanded_img)
+    return np.clip(expanded_img, 0, 1)
 
 def downsample_image(img, factor=2):
     low_res_size = (img.shape[1] // factor, img.shape[0] // factor) 
@@ -140,10 +152,11 @@ def load_sipi_images(directory, file_numbers):
 if __name__ == "__main__":
     r = 2
     m = 11
-    a_alpha0 = 20
+    a_alpha0 = 5
+    yiq = True
 
     sipi_dir = "D:\learning-color-image-expansion-filter\data" 
-    train_files = [f"4.1.0{i}.tiff" if i < 10 else f"4.1.{i}.tiff" for i in range(1, 8)]
+    train_files = [f"4.1.0{i}.tiff" if i < 10 else f"4.1.{i}.tiff" for i in range(1, 9)]
     test_files = [f"4.2.0{i}.tiff" if i < 10 else f"4.2.{i}.tiff" for i in range(1, 7) if i not in [2]]
 
     train_high_res = load_sipi_images(sipi_dir, train_files)
@@ -153,24 +166,29 @@ if __name__ == "__main__":
 
 
     # Extract patches
-    X_Y, X_I, X_Q, Y_Y, Y_I, Y_Q = extract_patches(train_high_res, train_low_res, r, m)
+    X_Y, X_I, X_Q, Y_Y, Y_I, Y_Q = extract_patches(train_high_res, train_low_res, r, m, yiq=yiq)
 
     # Learn filters
     M_Y = variational_learning(X_Y, Y_Y, a_alpha0)
     M_I = variational_learning(X_I, Y_I, a_alpha0)
     M_Q = variational_learning(X_Q, Y_Q, a_alpha0)
     
-    np.save("D:/learning-color-image-expansion-filter/matrix/filter_Y.npy", M_Y)
-    np.save("D:/learning-color-image-expansion-filter/matrix/filter_I.npy", M_I)
-    np.save("D:/learning-color-image-expansion-filter/matrix/filter_Q.npy", M_Q)
+    if yiq:
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/YIQ/filter_Y_{a_alpha0}.npy", M_Y)
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/YIQ/filter_I_{a_alpha0}.npy", M_I)
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/YIQ/filter_Q_{a_alpha0}.npy", M_Q)
+    else:
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/RGB/filter_R_{a_alpha0}.npy", M_Y)
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/RGB/filter_G_{a_alpha0}.npy", M_I)
+        np.save(f"D:/learning-color-image-expansion-filter/matrix/RGB/filter_B_{a_alpha0}.npy", M_Q)
 
     #Expand and evaluate
-    expanded_img = expand_image(test_low_res[2], M_Y, M_I, M_Q, r, m)
+    expanded_img = expand_image(test_low_res[2], M_Y, M_I, M_Q, r, m, yiq=yiq)
     expanded_img_uint8 = (expanded_img * 255).astype(np.uint8)
     plt.imsave("D:/learning-color-image-expansion-filter/result/expanded_img.tiff", expanded_img_uint8)
 
     test_low_res_uint8 = (test_low_res[2] * 255).astype(np.uint8) 
-    plt.imsave("D:/learning-import cv2-image-expansion-filter/result/low_res_image.tiff", test_low_res_uint8)
+    plt.imsave("D:/learning-color-image-expansion-filter/result/low_res_image.tiff", test_low_res_uint8)
     # Calculate PSNR
     psnr = calculate_psnr(test_high_res[2], expanded_img)
 
